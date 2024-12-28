@@ -62,6 +62,7 @@ def cleanup_authorized_principal_dir(valid_users: list[str]):
     if not os.listdir(authorized_principal):
         os.rmdir(authorized_principal)
 
+
 def handle_trusted_user_ca_key(ssh: dict):
     if 'trusted_user_ca_key' not in ssh:
         if os.path.exists(trusted_user_ca_key):
@@ -131,7 +132,8 @@ def get_config(config=None):
     )
     login_users_base = ['system', 'login', 'user']
     login_users = conf.get_config_dict(
-        login_users_base, key_mangling=('-', '_'),
+        login_users_base,
+        key_mangling=('-', '_'),
         no_tag_node_value_mangle=True,
         get_first_key=True,
     )
