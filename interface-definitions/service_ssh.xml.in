@@ -292,13 +292,14 @@
                   <leafNode name="principal">
                     <properties>
                       <help>principal-name</help>
+                      <constraint>
+                        #include <include/constraint/login-username.xml.i>
+                      </constraint>
+                      <multi/>
                     </properties>
-                    <constraint>
-                      #include <include/constraint/login-username.xml.i>
-                    </constraint>
                   </leafNode>
                 </children>
-              </leafNode>
+              </tagNode>
             </children>
           </node>
           #include <include/vrf-multi.xml.i>
