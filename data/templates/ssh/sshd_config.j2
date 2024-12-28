@@ -113,4 +113,9 @@ RekeyLimit {{ rekey.data }}M {{ rekey.time + 'M' if rekey.time is vyos_defined }
 
 {% if trusted_user_ca_key is vyos_defined %}
 TrustedUserCAKeys /etc/ssh/trusted_user_ca_key
+{% if trusted_user_ca_key.bind-user is vyos_defined %}
+AuthorizedPrincipalsFile /etc/ssh/authorized_principals/%u
+{% else %}
+AuthorizedPrincipalsFile none
+{% endif %}
 {% endif %}

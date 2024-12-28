@@ -281,6 +281,24 @@
             </properties>
             <children>
               #include <include/pki/ca-certificate.xml.i>
+              <tagNode name="bind-user">
+                <properties>
+                  <help>user-name</help>
+                  <constraint>
+                    #include <include/constraint/login-username.xml.i>
+                  </constraint>
+                </properties>
+                <children>
+                  <leafNode name="principal">
+                    <properties>
+                      <help>principal-name</help>
+                    </properties>
+                    <constraint>
+                      #include <include/constraint/login-username.xml.i>
+                    </constraint>
+                  </leafNode>
+                </children>
+              </leafNode>
             </children>
           </node>
           #include <include/vrf-multi.xml.i>

@@ -39,7 +39,7 @@ key_rsa = '/etc/ssh/ssh_host_rsa_key'
 key_dsa = '/etc/ssh/ssh_host_dsa_key'
 key_ed25519 = '/etc/ssh/ssh_host_ed25519_key'
 trusted_user_ca_key = '/etc/ssh/trusted_user_ca_key'
-
+authorized_principals = '/etc/ssh/authorized_principals'
 
 def get_config_value(key):
     tmp = read_file(SSHD_CONF)
@@ -380,19 +380,88 @@ class TestServiceSSH(VyOSUnitTestSHIM.TestCase):
 
         trusted_user_ca_key_config = get_config_value('TrustedUserCAKeys')
         self.assertIn(trusted_user_ca_key, trusted_user_ca_key_config)
+        authorize_principals_file_config = get_config_value('AuthorizedPrincipalsFile')
+        self.assertIn("none", authorize_principals_file_config)
 
         with open(trusted_user_ca_key, 'r') as file:
             ca_key_contents = file.read()
         self.assertIn(ca_root_cert_data, ca_key_contents)
 
-        self.cli_delete(base_path + ['trusted-user-ca-key'])
+        self.cli_delete(base_path + ['trusted-user-ca-key', 'ca-certificate', ca_cert_name])
         self.cli_delete(['pki', 'ca', ca_cert_name])
         self.cli_commit()
 
         # Verify the CA key is removed
         trusted_user_ca_key_config = get_config_value('TrustedUserCAKeys')
         self.assertNotIn(trusted_user_ca_key, trusted_user_ca_key_config)
+        authorize_principals_file_config = get_config_value('AuthorizedPrincipalsFile')
+        self.assertNotIn("none", authorize_principals_file_config)
 
+    def test_ssh_trusted_user_ca_key_and_bind_user_with_principal(self):
+        ca_cert_name = 'test_ca'
+        bind_user = 'test_user'
+        principals = ['test_principal_alice', 'test_principal_bob']
+        test_user = 'ssh_test'
+        test_pass = 'v2i57DZs8idUwMN3VC92'
+
+        # Create a test user
+        self.cli_set(
+            [
+                'system',
+                'login',
+                'user',
+                test_user,
+                'authentication',
+                'plaintext-password',
+                test_pass,
+            ]
+        )
+
+        # set pki ca <ca_cert_name> certificate <ca_key_data>
+        # set service ssh trusted-user-ca-key ca-certificate <ca_cert_name>
+        # set service ssh trusted-user-ca-key bind-user <bind_user> principal <principals>
+        self.cli_set(
+            pki_path
+            + [
+                'ca',
+                ca_cert_name,
+                'certificate',
+                ca_root_cert_data.replace('\n', ''),
+            ]
+        )
+        self.cli_set(
+            base_path + ['trusted-user-ca-key', 'ca-certificate', ca_cert_name]
+        )
+        for principal in principals:
+            self.cli_set(
+                base_path
+                + ['trusted-user-ca-key', 'bind-user', bind_user, 'principal', principal]
+            )
+        self.cli_commit()
+
+        trusted_user_ca_key_config = get_config_value('TrustedUserCAKeys')
+        self.assertIn(trusted_user_ca_key, trusted_user_ca_key_config)
+        authorized_principals_file = f'{authorized_principals}/{bind_user}'
+        self.assertTrue(os.path.exists(authorized_principals_file))
+
+        with open(authorized_principals_file, 'r') as file:
+            authorized_principals = file.read()
+        for principal in principals:
+            self.assertIn(principal, authorized_principals)
+
+        for principal in principals:
+            self.cli_delete(
+                base_path
+                + ['trusted-user-ca-key', 'bind-user', bind_user, 'principal', principal]
+            )
+
+        self.cli_delete(base_path + ['trusted-user-ca-key', 'ca-certificate', ca_cert_name])
+        self.cli_delete(['pki', 'ca', ca_cert_name])
+        self.cli_delete(['system', 'login', 'user', test_user])
+        self.cli_commit()
+
+        # Verify the authorized principals file is removed
+        self.assertFalse(os.path.exists(authorized_principals_file))
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

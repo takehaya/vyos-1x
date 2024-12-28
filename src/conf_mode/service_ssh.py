@@ -45,6 +45,76 @@ key_dsa = '/etc/ssh/ssh_host_dsa_key'
 key_ed25519 = '/etc/ssh/ssh_host_ed25519_key'
 
 trusted_user_ca_key = '/etc/ssh/trusted_user_ca_key'
+authorized_principal = '/etc/ssh/authorized_principal'
+
+
+def cleanup_authorized_principal_dir(valid_users: list[str]):
+    if not os.path.isdir(authorized_principal):
+        return
+
+    # Check the files (user name) under the directory and delete unnecessary ones.
+    for filename in os.listdir(authorized_principal):
+        file_path = os.path.join(authorized_principal, filename)
+        if os.path.isfile(file_path) and filename not in valid_users:
+            os.remove(file_path)
+
+    # If the directory is empty, delete it too
+    if not os.listdir(authorized_principal):
+        os.rmdir(authorized_principal)
+
+def handle_trusted_user_ca_key(ssh: dict):
+    if 'trusted_user_ca_key' not in ssh:
+        if os.path.exists(trusted_user_ca_key):
+            os.unlink(trusted_user_ca_key)
+
+        # remove authorized_principal directory if it exists
+        cleanup_authorized_principal_dir([])
+        return
+
+    # trusted_user_ca_key is present
+    ca_key_name = ssh['trusted_user_ca_key']['ca_certificate']
+    pki_ca_cert = ssh['pki']['ca'][ca_key_name]
+
+    loaded_ca_cert = load_certificate(pki_ca_cert['certificate'])
+    loaded_ca_certs = {
+        load_certificate(c['certificate'])
+        for c in ssh['pki']['ca'].values()
+        if 'certificate' in c
+    }
+
+    ca_full_chain = find_chain(loaded_ca_cert, loaded_ca_certs)
+    write_file(
+        trusted_user_ca_key, '\n'.join(encode_certificate(c) for c in ca_full_chain)
+    )
+
+    if 'bind-user' not in ssh['trusted_user_ca_key']:
+        # remove authorized_principal directory if it exists
+        cleanup_authorized_principal_dir([])
+        return
+
+    # bind-user is present
+    configured_users = []
+    for bind_user, bind_user_config in ssh['trusted_user_ca_key']['bind-user'].items():
+        if bind_user not in ssh['login_users']:
+            raise ConfigError(f"User '{bind_user}' not found in system login users")
+
+        if 'principal' not in bind_user_config:
+            raise ConfigError(f"Principal not found for user '{bind_user}'")
+
+        principals = bind_user_config['principal']
+        if isinstance(principals, str):
+            principals = [principals]
+
+        if not os.path.isdir(authorized_principal):
+            os.makedirs(authorized_principal, exist_ok=True)
+
+        principal_file = os.path.join(authorized_principal, bind_user)
+        contents = '\n'.join(principals) + '\n'
+        write_file(principal_file, contents)
+        configured_users.append(bind_user)
+
+    # remove unnecessary files under authorized_principal directory
+    cleanup_authorized_principal_dir(configured_users)
 
 
 def get_config(config=None):
@@ -59,7 +129,14 @@ def get_config(config=None):
     ssh = conf.get_config_dict(
         base, key_mangling=('-', '_'), get_first_key=True, with_pki=True
     )
+    login_users_base = ['system', 'login', 'user']
+    login_users = conf.get_config_dict(
+        login_users_base, key_mangling=('-', '_'),
+        no_tag_node_value_mangle=True,
+        get_first_key=True,
+    )
 
+    # create a list of all users, cli and users
     tmp = is_node_changed(conf, base + ['vrf'])
     if tmp:
         ssh.update({'restart_required': {}})
@@ -70,6 +147,9 @@ def get_config(config=None):
 
     # pass config file path - used in override template
     ssh['config_file'] = config_file
+
+    # use for trusted ca
+    ssh['login_users'] = login_users
 
     # Ignore default XML values if config doesn't exists
     # Delete key from dict
@@ -119,23 +199,7 @@ def generate(ssh):
         syslog(LOG_INFO, 'SSH ed25519 host key not found, generating new key!')
         call(f'ssh-keygen -q -N "" -t ed25519 -f {key_ed25519}')
 
-    if 'trusted_user_ca_key' in ssh:
-        ca_key_name = ssh['trusted_user_ca_key']['ca_certificate']
-        pki_ca_cert = ssh['pki']['ca'][ca_key_name]
-
-        loaded_ca_cert = load_certificate(pki_ca_cert['certificate'])
-        loaded_ca_certs = {
-            load_certificate(c['certificate'])
-            for c in ssh['pki']['ca'].values()
-            if 'certificate' in c
-        }
-
-        ca_full_chain = find_chain(loaded_ca_cert, loaded_ca_certs)
-        write_file(
-            trusted_user_ca_key, '\n'.join(encode_certificate(c) for c in ca_full_chain)
-        )
-    elif os.path.exists(trusted_user_ca_key):
-        os.unlink(trusted_user_ca_key)
+    handle_trusted_user_ca_key(ssh)
 
     render(config_file, 'ssh/sshd_config.j2', ssh)
 
