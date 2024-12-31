@@ -45,22 +45,22 @@ key_dsa = '/etc/ssh/ssh_host_dsa_key'
 key_ed25519 = '/etc/ssh/ssh_host_ed25519_key'
 
 trusted_user_ca_key = '/etc/ssh/trusted_user_ca_key'
-authorized_principal = '/etc/ssh/authorized_principal'
+authorized_principals = '/etc/ssh/authorized_principals'
 
 
-def cleanup_authorized_principal_dir(valid_users: list[str]):
-    if not os.path.isdir(authorized_principal):
+def cleanup_authorized_principals_dir(valid_users: list[str]):
+    if not os.path.isdir(authorized_principals):
         return
 
     # Check the files (user name) under the directory and delete unnecessary ones.
-    for filename in os.listdir(authorized_principal):
-        file_path = os.path.join(authorized_principal, filename)
+    for filename in os.listdir(authorized_principals):
+        file_path = os.path.join(authorized_principals, filename)
         if os.path.isfile(file_path) and filename not in valid_users:
             os.remove(file_path)
 
     # If the directory is empty, delete it too
-    if not os.listdir(authorized_principal):
-        os.rmdir(authorized_principal)
+    if not os.listdir(authorized_principals):
+        os.rmdir(authorized_principals)
 
 
 def handle_trusted_user_ca_key(ssh: dict):
@@ -68,8 +68,8 @@ def handle_trusted_user_ca_key(ssh: dict):
         if os.path.exists(trusted_user_ca_key):
             os.unlink(trusted_user_ca_key)
 
-        # remove authorized_principal directory if it exists
-        cleanup_authorized_principal_dir([])
+        # remove authorized_principals directory if it exists
+        cleanup_authorized_principals_dir([])
         return
 
     # trusted_user_ca_key is present
@@ -89,8 +89,8 @@ def handle_trusted_user_ca_key(ssh: dict):
     )
 
     if 'bind-user' not in ssh['trusted_user_ca_key']:
-        # remove authorized_principal directory if it exists
-        cleanup_authorized_principal_dir([])
+        # remove authorized_principals directory if it exists
+        cleanup_authorized_principals_dir([])
         return
 
     # bind-user is present
@@ -106,16 +106,16 @@ def handle_trusted_user_ca_key(ssh: dict):
         if isinstance(principals, str):
             principals = [principals]
 
-        if not os.path.isdir(authorized_principal):
-            os.makedirs(authorized_principal, exist_ok=True)
+        if not os.path.isdir(authorized_principals):
+            os.makedirs(authorized_principals, exist_ok=True)
 
-        principal_file = os.path.join(authorized_principal, bind_user)
+        principal_file = os.path.join(authorized_principals, bind_user)
         contents = '\n'.join(principals) + '\n'
         write_file(principal_file, contents)
         configured_users.append(bind_user)
 
-    # remove unnecessary files under authorized_principal directory
-    cleanup_authorized_principal_dir(configured_users)
+    # remove unnecessary files under authorized_principals directory
+    cleanup_authorized_principals_dir(configured_users)
 
 
 def get_config(config=None):
